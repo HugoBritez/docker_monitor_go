@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  docker-monitor:
+    build: .
+    container_name: docker-monitor
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - docker-monitor-logs:/var/log/docker-monitor
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TZ=America/Bogota
+    healthcheck:
+      test: ["CMD", "pgrep", "docker_monitor"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  monitor-supervisor:
+    image: alpine:latest
+    container_name: docker-monitor-supervisor
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - docker-monitor
+    command: >
+      sh -c "
+      apk add --no-cache curl;
+      while true;
+      do
+        if ! curl -s --unix-socket /var/run/docker.sock http://localhost/containers/docker-monitor/json | grep -q '\"Running\":true'; then
+          echo 'Monitor no está corriendo, reiniciando...';
+          curl -s --unix-socket /var/run/docker.sock -X POST http://localhost/containers/docker-monitor/restart;
+        fi;
+        sleep 300;
+      done
+      "
+
+volumes:
+  docker-monitor-logs: 
